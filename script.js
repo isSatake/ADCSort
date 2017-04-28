@@ -2,60 +2,37 @@
  *  Created at 2017/04/27 by Hiroaki Satake (81724496)
  */
 
-//TODO 状態の管理がおかしい。2クロック前の状態と比べる根拠は？
-/*
-
-初期化
-↓
-start()
-  draw()
-
-receive()
-  Array.push()
-  sort()
-
-sort()
-  save()
-  judge()
-  draw()
-
-draw()
-  send()
-
-send()
-  Array.pop()/push()
-
-send()より先にreceive()することがあるかもしれない
-1.send()したかどうかフラグを立てて、送信側でポーリングする？
-  初回は無条件で送る
-2.exchange()を作る
-  送信/受信を必ず同時にやる
-3.送受信の処理を1本のキューでやる
-  実行順が狂わないようにする
-
-*/
 $(function() {
   //ADC Class
   function ADC(values, index){
     this.values = values
     this.index = index
     this.$div = $('#' + (this.index + 1))
+    this.tupleSpace = []
     this.preValues = [] //2クロック前の状態
+    this.timerId
     this.end = false
 
     this.start()
   }
 
   ADC.prototype.start = function(){
-    this.values.sort(numSort)
-    this.draw()
+    var obj = this
+    obj.values.sort(numSort)
+    obj.draw()
+
+    //送受信サイクルをスタート
+    obj.timerId = setInterval(function(){
+      obj.sendReceive()
+    }, INTERVAL)
   }
 
   ADC.prototype.judge = function(){
-    if(this.preValues.length < 2) return
+    if(this.preValues.length < 3) return
     var shift = this.preValues.shift()
     if(shift == this.values){
       this.end = true
+      clearInterval(this.timerId)
       console.log("end")
     }
   }
@@ -64,10 +41,13 @@ $(function() {
     this.preValues.push(this.values)
   }
 
-  ADC.prototype.send = function(){
-    if(this.end) return
-    this.sendLower()
-    this.sendHigher()
+  ADC.prototype.sendReceive = function(){
+    console.log("sendReceive")
+    if(this.values.length == NUM_OF_NUM){
+      this.send()
+      return
+    }
+    this.get()
   }
 
   ADC.prototype.sort = function(){
@@ -77,18 +57,23 @@ $(function() {
     this.draw()
   }
 
-  ADC.prototype.sendLower = function (){
+  ADC.prototype.send = function(){
+    this.sendLowest()
+    this.sendHighest()
+  }
+
+  ADC.prototype.sendLowest = function (){
     if(ADCs[this.index - 1] === undefined) return
-    ADCs[this.index - 1].receive(this.values.shift()) //minimum
+    ADCs[this.index - 1].tupleSpace.push(this.values.shift())
   }
 
-  ADC.prototype.sendHigher = function (){
+  ADC.prototype.sendHighest = function (){
     if(ADCs[this.index + 1] === undefined) return
-    ADCs[this.index + 1].receive(this.values.pop()) //maximum
+    ADCs[this.index + 1].tupleSpace.push(this.values.pop())
   }
 
-  ADC.prototype.receive = function(value){
-    this.values.push(value)
+  ADC.prototype.get = function(value){
+    this.values.push(this.tupleSpace.shift())
     this.sort()
   }
 
@@ -99,9 +84,6 @@ $(function() {
       text = text + value + ' '
     })
     this.$div.text(text)
-    setTimeout(function(){
-      obj.send()
-    }, 1000)
   }
 
   function numSort(a, b){
@@ -110,7 +92,8 @@ $(function() {
 
   //Initialize
   var NUM_OF_ADC = 2
-  var NUM_OF_NUM = 3
+  var NUM_OF_NUM = 5
+  var INTERVAL = 1000
   var num1000 = Array.apply(null, Array(1000)).map(function(value, key) { return key + 1; })
   var ADCs = []
 
